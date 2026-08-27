@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+env:
+  # Windows runner 默认代码页编不了中文输出
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: 'utf-8'
+
 jobs:
   build:
     name: ${{ matrix.name }}

@@ -6,15 +6,25 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
+# Windows 的 Git Bash 通常只有 python，没有 python3。
 python="${PYTHON:-}"
 if [ -z "$python" ]; then
-  if   [ -x ".venv/bin/python" ];        then python=".venv/bin/python"
+  if   [ -x ".venv/bin/python" ];         then python=".venv/bin/python"
   elif [ -x ".venv/Scripts/python.exe" ]; then python=".venv/Scripts/python.exe"
-  else python="python3"; fi
+  elif command -v python3 >/dev/null 2>&1; then python="python3"
+  else python="python"; fi
 fi
 
-echo "==> 使用解释器：$python"
-"$python" -m pip install --quiet --upgrade pyinstaller >/dev/null 2>&1 || true
+# --add-data 的分隔符随平台变化：Windows 是 ';'，其余是 ':'。写死会在另一端失败。
+sep="$("$python" -c 'import os; print(os.pathsep)')"
+
+echo "==> 解释器：$python"
+echo "==> add-data 分隔符：$sep"
+
+"$python" -m PyInstaller --version >/dev/null 2>&1 || {
+  echo "未检测到 PyInstaller，请先执行：$python -m pip install pyinstaller" >&2
+  exit 1
+}
 
 out="src-tauri/resources/backend"
 rm -rf build dist "$out"
@@ -25,10 +35,11 @@ mkdir -p "$(dirname "$out")"
   --name jdka-backend \
   --onedir --console \
   --distpath dist \
-  --add-data "jdka/ui:jdka/ui" \
+  --add-data "jdka/ui${sep}jdka/ui" \
   --collect-all playwright \
   --hidden-import jdka.server \
   --hidden-import jdka.service \
+  --hidden-import jdka.license \
   jdka/cli.py
 
 mv "dist/jdka-backend" "$out"

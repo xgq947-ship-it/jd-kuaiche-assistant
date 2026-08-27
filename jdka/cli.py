@@ -8,7 +8,23 @@ import sys
 from jdka import __version__
 
 
+def _force_utf8_output() -> None:
+    """Windows 控制台默认用 GBK/cp1252，打印中文会直接抛 UnicodeEncodeError。
+
+    桌面外壳读取 stdout 的握手行，一旦这里崩掉后端就起不来，因此在做任何
+    输出之前先固定成 UTF-8。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_output()
     parser = argparse.ArgumentParser(
         prog="jdka", description="京东快车轮换助手"
     )

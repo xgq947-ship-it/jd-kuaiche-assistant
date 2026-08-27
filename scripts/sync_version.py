@@ -23,6 +23,14 @@ def replace_once(path: pathlib.Path, pattern: str, replacement: str) -> None:
 
 
 def main(argv: list[str]) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
     if len(argv) != 2 or not SEMVER.match(argv[1]):
         print("用法: sync_version.py <X.Y.Z>", file=sys.stderr)
         return 2
