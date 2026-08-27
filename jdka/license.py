@@ -27,6 +27,9 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.serialization import load_der_public_key
+
 from jdka.config import app_dir
 
 # 签发方公钥（SPKI DER，base64url）。私钥只在作者手中，绝不进仓库。
@@ -140,9 +143,6 @@ def verify(key: str, *, expected_device: str | None = None) -> LicenseStatus:
     _, payload_b64url, signature_b64url = parts
 
     try:
-        from cryptography.exceptions import InvalidSignature
-        from cryptography.hazmat.primitives.serialization import load_der_public_key
-
         public_key = load_der_public_key(b64url_decode(PUBLIC_KEY_B64URL))
         # 关键：对 base64url 字符串的字节验签，不要 decode 后重新序列化。
         public_key.verify(
