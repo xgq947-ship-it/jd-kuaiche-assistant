@@ -21,3 +21,8 @@ state/
 
 # PyInstaller 每次构建自动生成
 jdka-backend.spec
+
+# 授权私钥与本机授权文件，绝不入库
+*.pem
+license.key
+identity.json

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from jdka.version import __version__
 
 REPO = "xgq947-ship-it/jd-kuaiche-assistant"
 LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{REPO}/releases"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
 TIMEOUT = 8
 
@@ -87,3 +89,63 @@ def check(current: str = __version__) -> UpdateInfo:
         url=str(payload.get("html_url") or RELEASES_PAGE),
         notes=str(payload.get("body") or ""),
     )
+
+
+def _asset_for_platform(assets: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """挑当前平台的安装包。带上 GitHub 的 SHA-256，供外壳校验后再安装。"""
+    want_windows = sys.platform.startswith("win")
+    for asset in assets:
+        name = str(asset.get("name") or "").lower()
+        matched = name.endswith((".exe", ".msi")) if want_windows else name.endswith(".dmg")
+        if not matched:
+            continue
+        return {
+            "name": asset.get("name"),
+            "url": asset.get("browser_download_url"),
+            "size": asset.get("size"),
+            "digest": asset.get("digest"),
+        }
+    return None
+
+
+def list_releases(limit: int = 12) -> list[dict[str, Any]]:
+    """设置界面的「新功能」列表：正式版本 + 更新说明 + 当前平台安装包。"""
+    request = urllib.request.Request(
+        RELEASES_API,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"jd-kuaiche-assistant/{__version__}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - 拿不到列表不影响应用使用
+        return []
+    if not isinstance(payload, list):
+        return []
+
+    releases: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict) or item.get("draft") or item.get("prerelease"):
+            continue
+        tag = str(item.get("tag_name") or "")
+        assets = [a for a in (item.get("assets") or []) if isinstance(a, dict)]
+        releases.append(
+            {
+                "tag": tag,
+                "name": str(item.get("name") or tag),
+                "published_at": str(item.get("published_at") or "")[:10],
+                "notes": [
+                    line.lstrip("-*# ").strip()
+                    for line in str(item.get("body") or "").splitlines()
+                    if line.strip()
+                ][:12],
+                "url": str(item.get("html_url") or RELEASES_PAGE),
+                "newer": is_newer(tag, __version__),
+                "asset": _asset_for_platform(assets),
+            }
+        )
+        if len(releases) >= limit:
+            break
+    return releases

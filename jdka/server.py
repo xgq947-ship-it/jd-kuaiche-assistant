@@ -17,9 +17,12 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from jdka import __version__
-from jdka.config import AppConfig, SkuConfig
+from jdka import license as jdka_license
+from jdka.config import AppConfig, SkuConfig, app_dir
 from jdka.service import MonitorService
+from jdka.update import REPO as UPDATE_REPO
 from jdka.update import check as check_update
+from jdka.update import list_releases
 
 UI_DIR = Path(__file__).parent / "ui"
 
@@ -74,6 +77,17 @@ class _Handler(BaseHTTPRequestHandler):
         supplied = (query.get("token") or [""])[0] or self.headers.get("X-Token", "")
         return secrets.compare_digest(supplied, self.token)
 
+    def _licensed(self) -> bool:
+        """授权闸门放在服务端：藏掉界面不算保护，接口本身必须拒绝。"""
+        status = jdka_license.load_status()
+        if status.licensed:
+            return True
+        self._send(
+            {"error": "license_required", "message": status.reason, **status.to_dict()},
+            402,
+        )
+        return False
+
     def _body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length") or 0)
         if not length:
@@ -104,6 +118,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._send({"error": "unauthorized"}, 403)
             return
 
+        # 授权状态本身必须能在未激活时读到，否则激活页无从显示。
+        if parsed.path == "/api/license":
+            self._send(jdka_license.load_status().to_dict())
+            return
+        if parsed.path == "/api/about":
+            self._send(
+                {
+                    "version": __version__,
+                    "repository": f"https://github.com/{UPDATE_REPO}",
+                    "data_dir": str(app_dir()),
+                }
+            )
+            return
+
+        if not self._licensed():
+            return
+
         if parsed.path == "/api/status":
             payload = self.service.status()
             payload["version"] = __version__
@@ -113,6 +144,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(asdict(cfg))
         elif parsed.path == "/api/update":
             self._send(check_update().to_dict())
+        elif parsed.path == "/api/releases":
+            self._send({"releases": list_releases()})
         else:
             self._send({"error": "not found"}, 404)
 
@@ -124,6 +157,17 @@ class _Handler(BaseHTTPRequestHandler):
             return
         body = self._body()
         service = self.service
+
+        # 激活是未授权状态下唯一允许的写操作。
+        if parsed.path == "/api/license/activate":
+            status = jdka_license.activate(str(body.get("key") or ""))
+            self._send(
+                {"ok": status.licensed, "message": status.reason, **status.to_dict()}
+            )
+            return
+
+        if not self._licensed():
+            return
 
         if parsed.path == "/api/start":
             self._send(service.start())

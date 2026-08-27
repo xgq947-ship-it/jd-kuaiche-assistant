@@ -50,6 +50,33 @@ th{color:var(--muted);font-weight:500}
 .notice.err{border-color:var(--danger);color:var(--danger);
   background:color-mix(in srgb,var(--danger) 8%,transparent)}
 label{font-size:13px;color:var(--muted)}
+/* 激活闸门：未授权时盖住一切，页面里没有任何可绕过的入口 */
+#gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:none;
+  align-items:center;justify-content:center;padding:24px}
+#gate.show{display:flex}
+.gate-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:28px;max-width:560px;width:100%}
+.gate-card h2{margin:0 0 6px;font-size:18px}
+.gate-card p{margin:0 0 16px;color:var(--muted);font-size:13px}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;
+  background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+  word-break:break-all;user-select:all}
+textarea{font:inherit;width:100%;min-height:84px;padding:9px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg);color:var(--text);resize:vertical;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+/* 设置 */
+#settings{display:none}
+#settings.show{display:block}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.tabs button{border:none;background:none;border-bottom:2px solid transparent;
+  border-radius:0;padding:8px 14px;color:var(--muted)}
+.tabs button.active{color:var(--text);border-bottom-color:var(--accent)}
+.rel{border-bottom:1px solid var(--line);padding:10px 0}
+.rel:last-child{border-bottom:none}
+.rel b{font-size:13px}
+.rel ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.kv div:nth-child(odd){color:var(--muted)}
 .form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 14px;align-items:end}
 .field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .field input{width:100%}
@@ -58,12 +85,33 @@ label{font-size:13px;color:var(--muted)}
 </style>
 </head>
 <body>
+<div id="gate">
+  <div class="gate-card">
+    <h2>激活京东快车轮换助手</h2>
+    <p>本软件需要授权码才能使用。请把下面的<b>设备码</b>发给作者，换取专属授权码。
+       授权码永久有效，且只在这台设备上可用。</p>
+    <label>设备码</label>
+    <div class="code" id="deviceCode" style="margin:6px 0 8px">读取中…</div>
+    <div class="row" style="margin-bottom:16px">
+      <button id="btnCopyDevice">复制设备码</button>
+      <span class="muted" id="copyHint"></span>
+    </div>
+    <label for="licenseKey">授权码</label>
+    <textarea id="licenseKey" placeholder="粘贴作者发给你的授权码（JDKA1.…）" style="margin:6px 0 10px"></textarea>
+    <div class="row">
+      <button class="primary" id="btnActivate">激活</button>
+      <span id="gateMsg" class="muted"></span>
+    </div>
+  </div>
+</div>
+
 <header>
   <h1>京东快车轮换助手</h1>
   <span class="badge" id="version">v__VERSION__</span>
   <span class="grow"></span>
   <span id="updateBadge"></span>
   <span class="pill" id="runPill">未运行</span>
+  <button id="btnSettings">设置</button>
 </header>
 
 <main>
@@ -111,6 +159,33 @@ label{font-size:13px;color:var(--muted)}
   <div class="card">
     <h2>运行日志</h2>
     <div class="log" id="log"><div class="muted">暂无</div></div>
+  </div>
+</main>
+
+<main id="settings">
+  <div class="card">
+    <div class="tabs">
+      <button data-tab="updates" class="active">更新</button>
+      <button data-tab="license">授权</button>
+      <button data-tab="about">关于</button>
+    </div>
+
+    <div data-panel="updates">
+      <div class="row" style="margin-bottom:12px">
+        <button class="primary" id="btnCheckUpdate">检查更新</button>
+        <button id="btnDownloadUpdate" style="display:none">下载并安装</button>
+        <span class="muted" id="updateMsg">尚未检查更新。</span>
+      </div>
+      <div id="releases" class="muted" style="font-size:13px">点「检查更新」从 GitHub 同步版本列表。</div>
+    </div>
+
+    <div data-panel="license" style="display:none">
+      <div class="kv" id="licenseInfo"><div>状态</div><div>读取中…</div></div>
+    </div>
+
+    <div data-panel="about" style="display:none">
+      <div class="kv" id="aboutInfo"><div>版本</div><div>读取中…</div></div>
+    </div>
   </div>
 </main>
 
@@ -211,8 +286,110 @@ function render(s, upd){
     : `<div class="muted">暂无</div>`;
 }
 
+// ---------- 授权闸门 ----------
+// 界面只是第一道；后端对每个业务接口都会独立校验，藏 UI 不构成保护。
+let licensed = false;
+async function checkLicense(){
+  let st;
+  try { st = await api("/api/license"); }
+  catch { return false; }
+  licensed = !!st.licensed;
+  $("deviceCode").textContent = st.device_code || "—";
+  $("gate").classList.toggle("show", !licensed);
+  return licensed;
+}
+
+$("btnCopyDevice").onclick = async () => {
+  const raw = ($("deviceCode").textContent || "").replace(/-/g, "");
+  try { await navigator.clipboard.writeText(raw); $("copyHint").textContent = "已复制"; }
+  catch { $("copyHint").textContent = "复制失败，请手动选中"; }
+  setTimeout(() => $("copyHint").textContent = "", 2500);
+};
+
+$("btnActivate").onclick = async () => {
+  const b = $("btnActivate"); b.disabled = true;
+  const r = await post("/api/license/activate", {key: $("licenseKey").value});
+  b.disabled = false;
+  if (r.licensed){ $("gateMsg").textContent = ""; await checkLicense(); refresh(); }
+  else $("gateMsg").textContent = r.message || "授权码无效";
+};
+
+// ---------- 设置 ----------
+let settingsOpen = false, latestRelease = null;
+$("btnSettings").onclick = async () => {
+  settingsOpen = !settingsOpen;
+  document.querySelector("main:not(#settings)").style.display = settingsOpen ? "none" : "";
+  $("settings").classList.toggle("show", settingsOpen);
+  if (settingsOpen) loadSettings();
+};
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+  document.querySelectorAll("[data-panel]").forEach(p =>
+    p.style.display = p.dataset.panel === b.dataset.tab ? "" : "none");
+});
+
+async function loadSettings(){
+  const [lic, about] = await Promise.all([api("/api/license"), api("/api/about")]);
+  $("licenseInfo").innerHTML = [
+    ["状态", lic.licensed ? '<span class="pill on">已激活（永久）</span>'
+                          : `<span class="pill err">${escapeHtml(lic.reason||"未激活")}</span>`],
+    ["设备码", `<span class="code">${escapeHtml(lic.device_code||"")}</span>`],
+    ["备注", escapeHtml(lic.note || "—")],
+    ["签发日期", escapeHtml(lic.issued || "—")],
+  ].map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join("");
+  $("aboutInfo").innerHTML = [
+    ["版本", escapeHtml(about.version||"")],
+    ["数据目录", `<span class="code">${escapeHtml(about.data_dir||"")}</span>`],
+    ["项目地址", escapeHtml(about.repository||"")],
+  ].map(([k, v]) => `<div>${k}</div><div>${v}</div>`).join("");
+}
+
+$("btnCheckUpdate").onclick = async () => {
+  const b = $("btnCheckUpdate"); b.disabled = true;
+  $("updateMsg").textContent = "正在连接 GitHub…";
+  try{
+    const [upd, rel] = await Promise.all([api("/api/update"), api("/api/releases")]);
+    updateInfo = upd;
+    const list = rel.releases || [];
+    if (upd.error) $("updateMsg").textContent = upd.error;
+    else if (upd.available){
+      $("updateMsg").textContent = `发现新版本 ${upd.latest}`;
+      latestRelease = list.find(r => r.newer && r.asset) || null;
+      $("btnDownloadUpdate").style.display = latestRelease ? "" : "none";
+    } else $("updateMsg").textContent = "已是最新版本。";
+    $("releases").innerHTML = list.length ? list.map(r => `
+      <div class="rel">
+        <b>${escapeHtml(r.tag)}</b> <span class="muted">${escapeHtml(r.published_at)}</span>
+        ${r.newer ? '<span class="pill warn">新</span>' : ''}
+        <ul>${r.notes.map(n => `<li>${escapeHtml(n)}</li>`).join("") || "<li>无说明</li>"}</ul>
+      </div>`).join("") : '<span class="muted">GitHub 上还没有正式版本。</span>';
+  } finally { b.disabled = false; }
+};
+
+$("btnDownloadUpdate").onclick = async () => {
+  if (!latestRelease || !latestRelease.asset) return;
+  const a = latestRelease.asset;
+  const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+  // 浏览器模式没有下载校验能力，直接引到发布页由用户自行下载。
+  if (!invoke || !a.digest){ return openRelease(latestRelease.url); }
+  const b = $("btnDownloadUpdate"); b.disabled = true;
+  try{
+    await invoke("update_download", {request: {url: a.url, digest: a.digest, expectedSize: a.size}});
+    $("updateMsg").textContent = "校验通过，正在打开安装包…";
+    await invoke("update_install");
+  } catch(e){ $("updateMsg").textContent = "更新失败：" + e; }
+  finally { b.disabled = false; }
+};
+
+if (window.__TAURI__ && window.__TAURI__.event){
+  window.__TAURI__.event.listen("update-download-progress", ({payload}) => {
+    $("updateMsg").textContent = `正在下载更新… ${payload.percent}%`;
+  });
+}
+
 let updateInfo = null;
 async function refresh(){
+  if (!licensed && !(await checkLicense())) return;
   config = await api("/api/config");
   const s = await api("/api/status");
   render(s, updateInfo);
@@ -253,9 +430,12 @@ $("btnAdd").onclick = async () => {
   $("skuId").value = ""; refresh();
 };
 
-refresh();
-setInterval(refresh, 3000);
-api("/api/update").then(u => { updateInfo = u; refresh(); }).catch(()=>{});
+(async () => {
+  await checkLicense();
+  refresh();
+  setInterval(refresh, 3000);
+  if (licensed) api("/api/update").then(u => { updateInfo = u; refresh(); }).catch(()=>{});
+})();
 </script>
 </body>
 </html>

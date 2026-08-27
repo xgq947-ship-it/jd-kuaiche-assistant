@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -229,3 +230,90 @@ def test_only_tauri_origins_are_allowed_cross_origin() -> None:
     assert "http://tauri.localhost" in ALLOWED_ORIGINS
     assert "*" not in ALLOWED_ORIGINS
     assert not any(o.startswith("http://localhost") for o in ALLOWED_ORIGINS)
+
+
+# --------------------------------------------------------------------------
+# 5. 授权码
+# --------------------------------------------------------------------------
+
+
+def _issued_key(device: str, note: str = "") -> str:
+    """用一次性密钥对签发，测试不依赖作者的真私钥。"""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    priv = Ed25519PrivateKey.generate()
+    pem = priv.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    spki = priv.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    from jdka import license as lic
+
+    lic.PUBLIC_KEY_B64URL = lic.b64url_encode(spki)  # 指向本次测试的公钥
+    return lic.issue(device=device, private_key_pem=pem, note=note)
+
+
+def test_valid_key_activates_and_carries_note(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka import license as lic
+
+    device = lic.device_hash()
+    status = lic.verify(_issued_key(device, "老王"), expected_device=device)
+    assert status.licensed is True
+    assert status.note == "老王"
+
+
+def test_key_from_another_device_is_rejected(tmp_path, monkeypatch) -> None:
+    """授权码换台机器必须失效，否则一份码可以到处传。"""
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka import license as lic
+
+    key = _issued_key("a" * 64)
+    assert lic.verify(key, expected_device="b" * 64).licensed is False
+
+
+def test_tampered_payload_is_rejected(tmp_path, monkeypatch) -> None:
+    """改 payload 而不重签必须验不过 —— 这正是签名要防的事。"""
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka import license as lic
+
+    device = lic.device_hash()
+    key = _issued_key(device)
+    prefix, payload_b64, signature = key.split(".")
+    forged_payload = lic.encode_payload(
+        {"v": 1, "device": device, "issued": "2099-01-01", "perpetual": True, "note": "白嫖"}
+    )
+    forged = f"{prefix}.{forged_payload}.{signature}"
+    assert lic.verify(forged, expected_device=device).licensed is False
+
+
+def test_garbage_keys_never_activate(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka import license as lic
+
+    for bad in ["", "   ", "not-a-key", "JDKA1.abc", "JDKA1.a.b.c", "OTHER.a.b"]:
+        assert lic.verify(bad).licensed is False
+
+
+def test_invalid_key_is_not_persisted(tmp_path, monkeypatch) -> None:
+    """无效码不能落盘，否则下次启动会读到一份垃圾授权文件。"""
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka import license as lic
+
+    assert lic.activate("JDKA1.bogus.bogus").licensed is False
+    assert not lic.license_path().exists()
+
+
+def test_device_hash_is_stable_and_uses_no_hardware_ids(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka import license as lic
+
+    first = lic.device_hash()
+    assert first == lic.device_hash(), "同一台机器上必须稳定"
+    assert len(first) == 64
+    identity = json.loads(lic.identity_path().read_text(encoding="utf-8"))
+    assert set(identity) == {"installation_id", "device_secret"}
