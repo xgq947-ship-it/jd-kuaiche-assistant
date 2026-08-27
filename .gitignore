@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+# 绝不提交任何本机登录态 / 运行时数据
+profile-v1/
+browser-state.json
+config.json
+state/

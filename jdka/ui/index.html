@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>京东快车轮换助手</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea; --text:#1a1d21; --muted:#6b7280;
+  --accent:#d8232a; --ok:#0f9960; --warn:#c47f00; --danger:#c0392b; --radius:10px;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#16181c;--panel:#1e2126;--line:#2e3238;--text:#e8eaed;--muted:#9aa0a6;}
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--panel);
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+h1{font-size:16px;margin:0;font-weight:600}
+.badge{font-size:12px;color:var(--muted)}
+main{max-width:1080px;margin:0 auto;padding:20px;display:grid;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
+.card h2{font-size:14px;margin:0 0 12px;font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{font:inherit;padding:7px 14px;border-radius:7px;border:1px solid var(--line);
+  background:var(--panel);color:var(--text);cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:disabled{opacity:.5;cursor:not-allowed}
+button.danger{color:var(--danger);border-color:var(--danger)}
+input,select{font:inherit;padding:6px 9px;border-radius:7px;border:1px solid var(--line);
+  background:var(--bg);color:var(--text)}
+input[type=number]{width:96px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:500}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dot.on{background:var(--ok)} .dot.off{background:var(--muted)} .dot.err{background:var(--danger)}
+.pill{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.pill.on{color:var(--ok);border-color:var(--ok)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
+.pill.err{color:var(--danger);border-color:var(--danger)}
+.log{max-height:200px;overflow:auto;font-size:12px;color:var(--muted)}
+.log div{padding:3px 0;border-bottom:1px solid var(--line)}
+.muted{color:var(--muted)}
+.grow{flex:1}
+.notice{padding:10px 12px;border-radius:8px;border:1px solid var(--warn);color:var(--warn);
+  background:color-mix(in srgb,var(--warn) 8%,transparent);font-size:13px}
+.notice.err{border-color:var(--danger);color:var(--danger);
+  background:color-mix(in srgb,var(--danger) 8%,transparent)}
+label{font-size:13px;color:var(--muted)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 14px;align-items:end}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field input{width:100%}
+.field.actions{justify-content:end}
+.field.actions button{width:auto;min-width:88px;justify-self:start}
+</style>
+</head>
+<body>
+<header>
+  <h1>京东快车轮换助手</h1>
+  <span class="badge" id="version">v__VERSION__</span>
+  <span class="grow"></span>
+  <span id="updateBadge"></span>
+  <span class="pill" id="runPill">未运行</span>
+</header>
+
+<main>
+  <div id="alerts"></div>
+
+  <div class="card">
+    <h2>运行控制</h2>
+    <div class="row">
+      <button class="primary" id="btnStart">开始自动轮换</button>
+      <button id="btnStop">停止</button>
+      <button id="btnPreview">预览检查（只读）</button>
+      <span class="grow"></span>
+      <button id="btnLogin">登录京准通</button>
+      <button id="btnConfirm">我已登录</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>轮询间隔</label>
+      <input type="number" id="interval" min="10" max="3600"> <span class="muted">秒</span>
+      <label style="margin-left:12px">出单后旧计划</label>
+      <select id="rotateMode">
+        <option value="pause">仅暂停（推荐，可恢复）</option>
+        <option value="delete">永久删除（不可撤销）</option>
+      </select>
+      <button id="btnSaveSettings">保存</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>推广 SKU</h2>
+    <div class="form">
+      <div class="field"><label for="skuId">SKU ID</label><input id="skuId" placeholder="例如 10214914976513"></div>
+      <div class="field"><label for="budget">日预算 (元)</label><input type="number" id="budget" value="50" min="1"></div>
+      <div class="field"><label for="cpa">目标成交成本 (元)</label><input type="number" id="cpa" value="50" min="1"></div>
+      <div class="field"><label for="observe">观察期 (分钟)</label><input type="number" id="observe" value="30" min="1"></div>
+      <div class="field"><label for="maxRot">每日轮换上限</label><input type="number" id="maxRot" value="3" min="1"></div>
+      <div class="field"><label for="maxSpend">每日花费上限 (元)</label><input type="number" id="maxSpend" value="500" min="1"></div>
+      <div class="field actions"><button class="primary" id="btnAdd">添加</button></div>
+    </div>
+    <table style="margin-top:12px">
+      <thead><tr><th>SKU</th><th>当前计划</th><th>状态</th><th>花费</th><th>订单</th><th>最近动作</th><th></th></tr></thead>
+      <tbody id="skuRows"><tr><td colspan="7" class="muted">还没有添加 SKU</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>运行日志</h2>
+    <div class="log" id="log"><div class="muted">暂无</div></div>
+  </div>
+</main>
+
+<script>
+const TOKEN = "__TOKEN__";
+const api = (p, o) => fetch(p + (p.includes("?") ? "&" : "?") + "token=" + TOKEN, o).then(r => r.json());
+const post = (p, b) => api(p, {method:"POST", headers:{"Content-Type":"application/json"},
+  body: JSON.stringify(b || {})});
+const $ = id => document.getElementById(id);
+let config = null, dirty = false;
+
+function alertsHtml(s, upd){
+  let out = "";
+  if (s.login_required) out += `<div class="notice err">京准通登录态已失效，自动轮换已暂停。点击「登录京准通」完成登录后再点「我已登录」。</div>`;
+  else if (s.last_error) out += `<div class="notice">最近一次异常：${escapeHtml(s.last_error)}</div>`;
+  if (s.rotate_mode === "delete") out += `<div class="notice">当前为<b>永久删除</b>模式：出单后旧计划会被不可撤销地删除。</div>`;
+  if (upd && upd.available) out += `<div class="notice">有新版本 ${escapeHtml(upd.latest||"")}，<a href="${upd.url}" target="_blank">前往下载</a></div>`;
+  return out;
+}
+const escapeHtml = t => String(t ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+
+function statusPill(it){
+  if (!it) return `<span class="pill">未开始</span>`;
+  if (it.status === "error") return `<span class="pill err">异常</span>`;
+  if (it.status === "skipped") return `<span class="pill">${escapeHtml(it.reason||"跳过")}</span>`;
+  if (it.enabled === true) return `<span class="pill on">投放中</span>`;
+  if (it.enabled === false) return `<span class="pill warn">暂停中</span>`;
+  return `<span class="pill">观察中</span>`;
+}
+
+function render(s, upd){
+  $("alerts").innerHTML = alertsHtml(s, upd);
+  $("runPill").className = "pill " + (s.running ? "on" : "");
+  $("runPill").textContent = s.running ? `运行中 · 第 ${s.cycles} 轮` : "未运行";
+  $("btnStart").disabled = s.running;
+  if (!dirty && config){
+    $("interval").value = config.poll_interval_seconds;
+    $("rotateMode").value = config.rotate_mode;
+  }
+  const byId = {};
+  (s.items||[]).forEach(i => byId[i.sku_id] = i);
+  const skus = (config && config.skus) || [];
+  $("skuRows").innerHTML = skus.length ? skus.map(sk => {
+    const it = byId[sk.sku_id];
+    const m = (it && it.metrics) || {};
+    return `<tr>
+      <td><b>${escapeHtml(sk.sku_id)}</b><div class="muted">预算 ${sk.budget} · CPA ${escapeHtml(sk.target_cpa)}</div></td>
+      <td>${it && it.plan_name ? escapeHtml(it.plan_name) : '<span class="muted">—</span>'}</td>
+      <td>${statusPill(it)}</td>
+      <td>${m.cost != null ? "¥" + m.cost : '<span class="muted">—</span>'}</td>
+      <td>${m.total_order_cnt != null ? m.total_order_cnt : '<span class="muted">—</span>'}</td>
+      <td class="muted">${it ? escapeHtml(it.message || it.reason || "") : ""}</td>
+      <td><button class="danger" data-remove="${escapeHtml(sk.sku_id)}">移除</button></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="7" class="muted">还没有添加 SKU</td></tr>`;
+  $("skuRows").querySelectorAll("[data-remove]").forEach(b =>
+    b.onclick = async () => {
+      if (!confirm(`移除 SKU ${b.dataset.remove}？\n注意：这只会停止本工具管理它，不会改动京东上已有的计划。`)) return;
+      const r = await post("/api/sku/remove", {sku_id: b.dataset.remove});
+      if (!r.ok) alert(r.message); await refresh();
+    });
+  $("log").innerHTML = (s.log||[]).length
+    ? s.log.map(l => `<div><span class="muted">${escapeHtml(l.at.slice(11,19))}</span> ${escapeHtml(l.text)}</div>`).join("")
+    : `<div class="muted">暂无</div>`;
+}
+
+let updateInfo = null;
+async function refresh(){
+  config = await api("/api/config");
+  const s = await api("/api/status");
+  render(s, updateInfo);
+}
+
+$("btnStart").onclick = async () => { const r = await post("/api/start"); if(!r.ok) alert(r.message); refresh(); };
+$("btnStop").onclick  = async () => { await post("/api/stop"); refresh(); };
+$("btnLogin").onclick = async () => { const r = await post("/api/login"); if(!r.ok) alert(r.message); refresh(); };
+$("btnConfirm").onclick = async () => {
+  const b = $("btnConfirm"); b.disabled = true; b.textContent = "校验中…";
+  const r = await post("/api/login/confirm");
+  b.disabled = false; b.textContent = "我已登录";
+  alert(r.ok ? "登录态正常" : ("仍未登录：" + r.message)); refresh();
+};
+$("btnPreview").onclick = async () => {
+  const b = $("btnPreview"); b.disabled = true; b.textContent = "检查中…";
+  try{
+    const r = await post("/api/preview");
+    const lines = (r.results||[]).map(x =>
+      `${x.sku_id}：${x.status === "error" ? "异常 - " + (x.message||"") : (x.action||x.status) + " " + (x.reason||"")}`);
+    alert(lines.length ? "预览结果（未做任何写操作）：\n\n" + lines.join("\n") : "没有启用的 SKU");
+  } finally { b.disabled = false; b.textContent = "预览检查（只读）"; refresh(); }
+};
+["interval","rotateMode"].forEach(id => $(id).oninput = () => dirty = true);
+$("btnSaveSettings").onclick = async () => {
+  const mode = $("rotateMode").value;
+  if (mode === "delete" && !confirm("永久删除模式：出单后旧计划会被不可撤销地删除。\n确定开启吗？")) return;
+  const r = await post("/api/settings", {poll_interval_seconds: +$("interval").value, rotate_mode: mode});
+  dirty = false; if (!r.ok) alert(r.message); refresh();
+};
+$("btnAdd").onclick = async () => {
+  const r = await post("/api/sku/add", {
+    sku_id: $("skuId").value.trim(), budget: +$("budget").value, target_cpa: $("cpa").value,
+    min_observe_minutes: +$("observe").value, max_rotations_per_day: +$("maxRot").value,
+    max_daily_spend: +$("maxSpend").value,
+  });
+  if (!r.ok) return alert(r.message);
+  $("skuId").value = ""; refresh();
+};
+
+refresh();
+setInterval(refresh, 3000);
+api("/api/update").then(u => { updateInfo = u; refresh(); }).catch(()=>{});
+</script>
+</body>
+</html>

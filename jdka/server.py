@@ -1,0 +1,192 @@
+"""本地控制面：仅监听 127.0.0.1，带随机访问令牌。
+
+前后端通过一组小 JSON 接口交互，后续用 Tauri 套壳时可以直接复用同一套
+接口，不必重写业务层。
+"""
+
+from __future__ import annotations
+
+import json
+import secrets
+import threading
+import webbrowser
+from dataclasses import asdict
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+from jdka import __version__
+from jdka.config import AppConfig, SkuConfig
+from jdka.service import MonitorService
+from jdka.update import check as check_update
+
+UI_DIR = Path(__file__).parent / "ui"
+
+
+class _Handler(BaseHTTPRequestHandler):
+    service: MonitorService
+    token: str
+
+    def log_message(self, *args: Any) -> None:  # noqa: D102 - 静默访问日志
+        pass
+
+    # ---------- 基础 ----------
+
+    def _send(self, payload: Any, status: int = 200) -> None:
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _authorized(self, query: dict[str, list[str]]) -> bool:
+        supplied = (query.get("token") or [""])[0] or self.headers.get("X-Token", "")
+        return secrets.compare_digest(supplied, self.token)
+
+    def _body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
+    # ---------- 路由 ----------
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+
+        if parsed.path == "/":
+            html = (UI_DIR / "index.html").read_text(encoding="utf-8")
+            html = html.replace("__TOKEN__", self.token).replace("__VERSION__", __version__)
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if not self._authorized(query):
+            self._send({"error": "unauthorized"}, 403)
+            return
+
+        if parsed.path == "/api/status":
+            payload = self.service.status()
+            payload["version"] = __version__
+            self._send(payload)
+        elif parsed.path == "/api/config":
+            cfg = self.service.config
+            self._send(asdict(cfg))
+        elif parsed.path == "/api/update":
+            self._send(check_update().to_dict())
+        else:
+            self._send({"error": "not found"}, 404)
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        if not self._authorized(query):
+            self._send({"error": "unauthorized"}, 403)
+            return
+        body = self._body()
+        service = self.service
+
+        if parsed.path == "/api/start":
+            self._send(service.start())
+        elif parsed.path == "/api/stop":
+            self._send(service.stop())
+        elif parsed.path == "/api/preview":
+            self._send({"ok": True, "results": service.run_preview()})
+        elif parsed.path == "/api/login":
+            self._send(service.open_login())
+        elif parsed.path == "/api/login/confirm":
+            self._send(service.confirm_login())
+        elif parsed.path == "/api/sku/add":
+            self._send(self._add_sku(body))
+        elif parsed.path == "/api/sku/remove":
+            self._send(self._remove_sku(body))
+        elif parsed.path == "/api/settings":
+            self._send(self._save_settings(body))
+        else:
+            self._send({"error": "not found"}, 404)
+
+    # ---------- 操作 ----------
+
+    def _add_sku(self, body: dict[str, Any]) -> dict[str, Any]:
+        sku_id = str(body.get("sku_id") or "").strip()
+        if not sku_id.isdigit() or len(sku_id) < 6:
+            return {"ok": False, "message": "SKU ID 必须是至少 6 位数字"}
+        cfg = self.service.config
+        if any(s.sku_id == sku_id for s in cfg.skus):
+            return {"ok": False, "message": "该 SKU 已存在"}
+        try:
+            sku = SkuConfig(
+                sku_id=sku_id,
+                budget=float(body.get("budget") or 50),
+                target_cpa=str(body.get("target_cpa") or "50"),
+                order_threshold=int(body.get("order_threshold") or 1),
+                min_observe_minutes=float(body.get("min_observe_minutes") or 30),
+                max_rotations_per_day=int(body.get("max_rotations_per_day") or 3),
+                max_daily_spend=float(body.get("max_daily_spend") or 500),
+            )
+        except (TypeError, ValueError):
+            return {"ok": False, "message": "参数格式不正确"}
+        if sku.budget <= 0 or float(sku.target_cpa) <= 0:
+            return {"ok": False, "message": "日预算和目标成交成本必须大于 0"}
+        cfg.skus.append(sku)
+        cfg.save()
+        return {"ok": True}
+
+    def _remove_sku(self, body: dict[str, Any]) -> dict[str, Any]:
+        sku_id = str(body.get("sku_id") or "")
+        cfg = self.service.config
+        before = len(cfg.skus)
+        cfg.skus = [s for s in cfg.skus if s.sku_id != sku_id]
+        if len(cfg.skus) == before:
+            return {"ok": False, "message": "未找到该 SKU"}
+        cfg.save()
+        self.service.items.pop(f"JD_KC_{sku_id}", None)
+        return {"ok": True}
+
+    def _save_settings(self, body: dict[str, Any]) -> dict[str, Any]:
+        cfg = self.service.config
+        if "poll_interval_seconds" in body:
+            try:
+                cfg.poll_interval_seconds = max(10, min(3600, int(body["poll_interval_seconds"])))
+            except (TypeError, ValueError):
+                return {"ok": False, "message": "轮询间隔必须是整数"}
+        if "rotate_mode" in body:
+            mode = str(body["rotate_mode"])
+            if mode not in {"pause", "delete"}:
+                return {"ok": False, "message": "轮换方式只能是 pause 或 delete"}
+            cfg.rotate_mode = mode
+        if "headless" in body:
+            cfg.headless = bool(body["headless"])
+        cfg.save()
+        return {"ok": True, "config": asdict(cfg)}
+
+
+def serve(*, port: int = 0, open_browser: bool = True) -> None:
+    service = MonitorService()
+    token = secrets.token_urlsafe(24)
+    handler = type("Handler", (_Handler,), {"service": service, "token": token})
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    actual = server.server_address[1]
+    url = f"http://127.0.0.1:{actual}/?token={token}"
+    print(f"京东快车轮换助手 v{__version__}")
+    print(f"控制面板：{url}")
+    if open_browser:
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n正在停止…")
+    finally:
+        service.shutdown()
+        server.shutdown()

@@ -1,0 +1,22 @@
+[project]
+name = "jd-kuaiche-assistant"
+version = "0.1.0"
+description = "京东快车推广计划自动轮换助手（后台静默浏览器，本地运行）"
+requires-python = ">=3.11"
+dependencies = ["playwright>=1.52.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3.0"]
+
+[project.scripts]
+jdka = "jdka.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["jdka*"]
+
+[tool.setuptools.package-data]
+jdka = ["ui/*.html"]

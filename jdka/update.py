@@ -1,0 +1,89 @@
+"""自动更新检查。
+
+与 reverse-prompt / AI-Video-Canvas 一致，发布走 GitHub Releases：
+打 ``vX.Y.Z`` 标签 → Actions 构建产物 → ``gh release create``。
+
+本模块只负责**检查并告知**，不静默替换正在运行的程序：自动改写运行中的
+二进制在 macOS 上会破坏代码签名与公证。UI 拿到结果后引导用户下载安装包。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any
+
+from jdka.version import __version__
+
+REPO = "xgq947-ship-it/jd-kuaiche-assistant"
+LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
+TIMEOUT = 8
+
+_SEMVER = re.compile(r"(\d+)\.(\d+)\.(\d+)")
+
+
+def parse_version(text: str) -> tuple[int, int, int] | None:
+    match = _SEMVER.search(text or "")
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups())  # type: ignore[return-value]
+
+
+def is_newer(latest: str, current: str) -> bool:
+    a, b = parse_version(latest), parse_version(current)
+    if a is None or b is None:
+        return False
+    return a > b
+
+
+@dataclass
+class UpdateInfo:
+    current: str
+    latest: str | None = None
+    available: bool = False
+    url: str = RELEASES_PAGE
+    notes: str = ""
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "current": self.current,
+            "latest": self.latest,
+            "available": self.available,
+            "url": self.url,
+            "notes": self.notes[:2000],
+            "error": self.error,
+        }
+
+
+def check(current: str = __version__) -> UpdateInfo:
+    """查询最新 Release。网络不可用时安静降级，绝不阻断主流程。"""
+    request = urllib.request.Request(
+        LATEST_API,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"jd-kuaiche-assistant/{current}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return UpdateInfo(current=current, error="尚未发布任何版本")
+        return UpdateInfo(current=current, error=f"检查更新失败：HTTP {exc.code}")
+    except Exception as exc:  # noqa: BLE001 - 更新检查永远不该让应用崩
+        return UpdateInfo(current=current, error=f"检查更新失败：{type(exc).__name__}")
+
+    tag = str(payload.get("tag_name") or "")
+    return UpdateInfo(
+        current=current,
+        latest=tag or None,
+        available=is_newer(tag, current),
+        url=str(payload.get("html_url") or RELEASES_PAGE),
+        notes=str(payload.get("body") or ""),
+    )

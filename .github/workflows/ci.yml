@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 测试 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: 运行测试
+        run: python -m pytest -q
+      - name: 环境自检可执行
+        run: python -m jdka.cli --version
+
+  version-check:
+    name: 版本一致性
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: pyproject 与 version.py 必须一致
+        run: |
+          py=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          mod=$(grep -m1 '__version__' jdka/version.py | cut -d'"' -f2)
+          echo "pyproject=$py version.py=$mod"
+          test "$py" = "$mod"
