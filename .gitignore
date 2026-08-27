@@ -6,8 +6,18 @@ dist/
 *.egg-info/
 .pytest_cache/
 .DS_Store
+
+# Node / Rust 产物
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/resources/
+
 # 绝不提交任何本机登录态 / 运行时数据
 profile-v1/
 browser-state.json
 config.json
 state/
+
+# PyInstaller 每次构建自动生成
+jdka-backend.spec

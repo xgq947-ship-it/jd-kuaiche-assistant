@@ -214,3 +214,18 @@ def test_state_resets_daily_counters_on_new_day() -> None:
 
 def test_sku_config_id_is_stable() -> None:
     assert SkuConfig(sku_id="10214914976513").config_id == "JD_KC_10214914976513"
+
+
+# --------------------------------------------------------------------------
+# 4. 控制面跨域（桌面外壳里页面源是 tauri://localhost）
+# --------------------------------------------------------------------------
+
+
+def test_only_tauri_origins_are_allowed_cross_origin() -> None:
+    """放行必须是白名单，绝不能是通配符 —— 否则任意网页都能打本地控制面。"""
+    from jdka.server import ALLOWED_ORIGINS
+
+    assert "tauri://localhost" in ALLOWED_ORIGINS
+    assert "http://tauri.localhost" in ALLOWED_ORIGINS
+    assert "*" not in ALLOWED_ORIGINS
+    assert not any(o.startswith("http://localhost") for o in ALLOWED_ORIGINS)

@@ -23,6 +23,13 @@ from jdka.update import check as check_update
 
 UI_DIR = Path(__file__).parent / "ui"
 
+# 桌面外壳里页面源是 tauri://localhost（Windows 为 http://tauri.localhost），
+# 访问 127.0.0.1 属跨域，必须显式放行；只认这两个固定源，不用通配符。
+# 真正的访问控制仍然是每个请求都要带令牌。
+ALLOWED_ORIGINS = frozenset(
+    {"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
+)
+
 
 class _Handler(BaseHTTPRequestHandler):
     service: MonitorService
@@ -33,14 +40,35 @@ class _Handler(BaseHTTPRequestHandler):
 
     # ---------- 基础 ----------
 
+    def _cors(self) -> None:
+        origin = self.headers.get("Origin", "")
+        if origin in ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
     def _send(self, payload: Any, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self._cors()
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self) -> None:  # noqa: N802 - 预检请求
+        origin = self.headers.get("Origin", "")
+        if origin not in ALLOWED_ORIGINS:
+            self.send_response(403)
+            self.end_headers()
+            return
+        self.send_response(204)
+        self._cors()
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Token")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _authorized(self, query: dict[str, list[str]]) -> bool:
         supplied = (query.get("token") or [""])[0] or self.headers.get("X-Token", "")
@@ -172,15 +200,33 @@ class _Handler(BaseHTTPRequestHandler):
         return {"ok": True, "config": asdict(cfg)}
 
 
-def serve(*, port: int = 0, open_browser: bool = True) -> None:
+def serve(
+    *,
+    port: int = 0,
+    open_browser: bool = True,
+    emit_endpoint: bool = False,
+) -> None:
+    """启动本地控制面。
+
+    ``emit_endpoint`` 供桌面外壳使用：在 stdout 打一行 JSON 告知实际端口与
+    访问令牌，外壳读到后才认为后端就绪。端口固定为 0（随机）时尤其必要。
+    """
     service = MonitorService()
     token = secrets.token_urlsafe(24)
     handler = type("Handler", (_Handler,), {"service": service, "token": token})
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     actual = server.server_address[1]
     url = f"http://127.0.0.1:{actual}/?token={token}"
-    print(f"京东快车轮换助手 v{__version__}")
-    print(f"控制面板：{url}")
+    if emit_endpoint:
+        # 单独一行、带前缀，避免与其它输出混淆。
+        print(
+            "JDKA_ENDPOINT "
+            + json.dumps({"port": actual, "token": token, "version": __version__}),
+            flush=True,
+        )
+    else:
+        print(f"京东快车轮换助手 v{__version__}")
+        print(f"控制面板：{url}")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

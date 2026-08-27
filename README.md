@@ -94,3 +94,39 @@ jdka ui         # 控制面板
 - 只支持京准通**快车**的商品-常规推广-关键词定向计划。
 - 创建请求由推荐接口的返回值程序化组装，不驱动网页控件。
 - 平台接口若发生变更，需要发新版本修复。
+
+## 桌面应用
+
+外壳用 Tauri，业务逻辑仍是同一份 Python 后端：外壳启动时把后端拉起在随机端口，
+读取它 stdout 的一行 `JDKA_ENDPOINT {...}` 拿到端口与访问令牌，再交给界面。
+界面是同一个 `jdka/ui/index.html`，浏览器模式与桌面模式共用一份源文件。
+
+```bash
+npm install
+npm run backend:build     # 用 PyInstaller 打出后端可执行文件
+npm run tauri dev         # 开发（开发期直接调用仓库 venv，不必每次重打后端）
+npm run tauri build       # 生成 DMG / NSIS 安装包
+```
+
+退出应用时会一并结束后端及其拉起的后台浏览器，不留孤儿进程。
+
+### 自动更新
+
+应用启动后查询 GitHub Releases，有新版会在界面顶部提示。下载走 Rust 侧实现，
+并强制两条约束：下载地址必须落在本仓库 `releases/download/` 路径内；下载完成
+后校验 SHA-256，不通过立即删除。
+
+不做静默自替换 —— 在 macOS 上改写正在运行的 `.app` 会破坏代码签名与公证，
+因此校验通过后交由系统打开安装包，由用户确认。
+
+### 发布
+
+推送 `vX.Y.Z` 标签后，Actions 会先用 `scripts/sync_version.py` 把版本同步到
+`jdka/version.py`、`pyproject.toml`、`package.json`、`tauri.conf.json` 和
+`Cargo.toml`，再在 macOS 与 Windows runner 上分别构建，两端都成功才发布 Release。
+
+### 尚未完成
+
+安装包目前**未做代码签名与公证**：macOS 上 Gatekeeper 会拦截（需右键打开），
+Windows 上 SmartScreen 会告警。正式对外分发前需要 Apple Developer 账号与
+Windows OV 证书。

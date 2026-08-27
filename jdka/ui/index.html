@@ -115,8 +115,27 @@ label{font-size:13px;color:var(--muted)}
 </main>
 
 <script>
-const TOKEN = "__TOKEN__";
-const api = (p, o) => fetch(p + (p.includes("?") ? "&" : "?") + "token=" + TOKEN, o).then(r => r.json());
+// 同一份页面同时服务两种运行方式：
+//  - 浏览器模式：Python 控制面把令牌注入到 __TOKEN__，同源请求。
+//  - 桌面外壳：后端端口随机，向 Tauri 询问真实 endpoint。
+let ENDPOINT = null;
+async function endpoint(){
+  if (ENDPOINT) return ENDPOINT;
+  const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+  if (invoke){
+    const e = await invoke("backend_endpoint");
+    ENDPOINT = {base: `http://127.0.0.1:${e.port}`, token: e.token};
+  } else {
+    ENDPOINT = {base: "", token: "__TOKEN__"};
+  }
+  return ENDPOINT;
+}
+async function api(p, o){
+  const {base, token} = await endpoint();
+  const url = base + p + (p.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+  const r = await fetch(url, o);
+  return r.json();
+}
 const post = (p, b) => api(p, {method:"POST", headers:{"Content-Type":"application/json"},
   body: JSON.stringify(b || {})});
 const $ = id => document.getElementById(id);
@@ -127,7 +146,7 @@ function alertsHtml(s, upd){
   if (s.login_required) out += `<div class="notice err">京准通登录态已失效，自动轮换已暂停。点击「登录京准通」完成登录后再点「我已登录」。</div>`;
   else if (s.last_error) out += `<div class="notice">最近一次异常：${escapeHtml(s.last_error)}</div>`;
   if (s.rotate_mode === "delete") out += `<div class="notice">当前为<b>永久删除</b>模式：出单后旧计划会被不可撤销地删除。</div>`;
-  if (upd && upd.available) out += `<div class="notice">有新版本 ${escapeHtml(upd.latest||"")}，<a href="${upd.url}" target="_blank">前往下载</a></div>`;
+  if (upd && upd.available) out += `<div class="notice">有新版本 ${escapeHtml(upd.latest||"")}　<button id="btnUpdate">前往下载</button></div>`;
   return out;
 }
 const escapeHtml = t => String(t ?? "").replace(/[&<>"']/g, c =>
@@ -142,8 +161,22 @@ function statusPill(it){
   return `<span class="pill">观察中</span>`;
 }
 
+// 桌面外壳里不能用 target=_blank，交给 Rust 打开系统浏览器（且只允许发布页）。
+async function openRelease(url){
+  const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+  if (invoke){
+    try { await invoke("open_release_page", {url}); return; }
+    catch (e) { alert("无法打开下载页：" + e); return; }
+  }
+  window.open(url, "_blank", "noopener");
+}
+
 function render(s, upd){
+  // 桌面外壳直接加载静态 HTML，占位符不会被后端替换，用真实版本兜底。
+  if (s.version) $("version").textContent = "v" + s.version;
   $("alerts").innerHTML = alertsHtml(s, upd);
+  const ub = $("btnUpdate");
+  if (ub && upd) ub.onclick = () => openRelease(upd.url);
   $("runPill").className = "pill " + (s.running ? "on" : "");
   $("runPill").textContent = s.running ? `运行中 · 第 ${s.cycles} 轮` : "未运行";
   $("btnStart").disabled = s.running;

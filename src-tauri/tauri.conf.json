@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "京东快车轮换助手",
+  "version": "0.1.0",
+  "identifier": "com.sankaiai.jd-kuaiche-assistant",
+  "build": {
+    "frontendDist": "../jdka/ui",
+    "beforeBuildCommand": "npm run backend:build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "京东快车轮换助手",
+        "width": 1080,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 620,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* ipc: http://ipc.localhost; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "resources/backend/": "backend/"
+    },
+    "shortDescription": "京东快车推广计划自动轮换",
+    "longDescription": "京准通快车推广计划自动轮换工具。后台静默浏览器运行，不占用日常浏览器；出单后自动让旧计划退场并创建新计划。"
+  }
+}

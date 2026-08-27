@@ -1,0 +1,14 @@
+{
+  "name": "jd-kuaiche-assistant",
+  "private": true,
+  "version": "0.1.0",
+  "description": "京东快车轮换助手桌面外壳",
+  "scripts": {
+    "tauri": "tauri",
+    "backend:build": "bash scripts/build-backend.sh",
+    "check": "cargo check --manifest-path src-tauri/Cargo.toml"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.0"
+  }
+}

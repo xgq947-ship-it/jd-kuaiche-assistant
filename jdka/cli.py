@@ -18,6 +18,8 @@ def main(argv: list[str] | None = None) -> int:
     ui = sub.add_parser("ui", help="启动本地控制面板（默认）")
     ui.add_argument("--port", type=int, default=0, help="指定端口，默认随机")
     ui.add_argument("--no-open", action="store_true", help="不自动打开浏览器")
+    ui.add_argument("--emit-endpoint", action="store_true",
+                    help="在 stdout 打印端口与令牌，供桌面外壳读取")
 
     sub.add_parser("preview", help="跑一轮只读预览检查后退出")
     sub.add_parser("doctor", help="环境自检")
@@ -28,7 +30,11 @@ def main(argv: list[str] | None = None) -> int:
     if command == "ui":
         from jdka.server import serve
 
-        serve(port=getattr(args, "port", 0), open_browser=not getattr(args, "no_open", False))
+        serve(
+            port=getattr(args, "port", 0),
+            open_browser=not getattr(args, "no_open", False),
+            emit_endpoint=getattr(args, "emit_endpoint", False),
+        )
         return 0
 
     if command == "preview":
