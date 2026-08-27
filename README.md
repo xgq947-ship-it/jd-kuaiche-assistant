@@ -143,6 +143,9 @@ Windows OV 证书。
 python scripts/issue_license.py <设备码> --note 客户名
 ```
 
+签发会自动记入台账 `~/Desktop/jd-kuaiche-授权记录.jsonl`（客户丢了授权码可直接查回重发，
+不必重新签发；也能回答「一共卖给了谁」）。加 `--no-record` 可跳过。
+
 私钥默认读 `~/Desktop/jd-kuaiche-签发私钥-请妥善保管.pem`。
 **私钥绝不能进仓库、也不要发给任何人** —— 泄露等于任何人都能自行签发。
 仓库里只有公钥（`jdka/license.py` 的 `PUBLIC_KEY_B64URL`）。
