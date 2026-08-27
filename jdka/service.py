@@ -15,6 +15,7 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
+from jdka import license as jdka_license
 from jdka.browser.runtime import BrowserUnavailable, LocalChromeRuntime
 from jdka.config import AppConfig
 from jdka.engine import CycleResult, RotationEngine
@@ -114,6 +115,11 @@ class MonitorService:
     def start(self) -> dict[str, Any]:
         if self._running:
             return {"ok": True, "message": "已在运行"}
+        # 纵深防御：HTTP 网关已经拦过一道，这里再独立校验一次。
+        # 只在一个地方判断，意味着改掉那一个函数就能全线放行；而这里是真正
+        # 开始花钱的入口，值得单独确认。
+        if not jdka_license.load_status().licensed:
+            return {"ok": False, "message": "尚未激活，无法开始自动轮换"}
         if not [s for s in self.config.skus if s.enabled]:
             return {"ok": False, "message": "请先添加至少一个启用的 SKU"}
         self._running = True

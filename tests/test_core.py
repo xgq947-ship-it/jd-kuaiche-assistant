@@ -317,3 +317,17 @@ def test_device_hash_is_stable_and_uses_no_hardware_ids(tmp_path, monkeypatch) -
     assert len(first) == 64
     identity = json.loads(lic.identity_path().read_text(encoding="utf-8"))
     assert set(identity) == {"installation_id", "device_secret"}
+
+
+def test_monitor_refuses_to_start_without_license(tmp_path, monkeypatch) -> None:
+    """纵深防御：只拦 HTTP 网关不够，真正开始花钱的入口要独立校验。"""
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    from jdka.config import AppConfig, SkuConfig
+    from jdka.service import MonitorService
+
+    service = MonitorService()
+    service.config = AppConfig(skus=[SkuConfig(sku_id="10214914976513")])
+    result = service.start()
+    assert result["ok"] is False
+    assert "激活" in result["message"]
+    assert service._running is False
