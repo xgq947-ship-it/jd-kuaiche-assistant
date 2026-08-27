@@ -199,3 +199,33 @@ python scripts/issue_license.py <设备码> --note 客户名
 
 若要把保护做实，唯一有效的方向是把核心逻辑放到服务端执行 ——
 客户端再怎么加固，代码在对方机器上跑就一定可以被改。
+
+## 与上游 ecommerce-store-ops 同步
+
+本项目是从 `ecommerce-store-ops` **复制**出来的（上游一行不改），因此两边会分叉：
+上游修了 bug，这边不会自动拿到。
+
+`scripts/sync_upstream.py` 把「抽取时做过哪些适配」显式声明成规则，于是可以做
+**归一化对比**——先把上游文件套上同样的适配再比，剩下的差异就是真正的漂移。
+
+```bash
+python scripts/sync_upstream.py          # 对账，列出哪些文件与上游不一致
+python scripts/sync_upstream.py --diff   # 连同具体差异一起看
+python scripts/sync_upstream.py --pull   # 把上游改动同步过来（覆盖本地）
+python -m pytest -q                      # --pull 之后必须跑
+```
+
+对账范围只有**抽取自上游的 6 个文件**（`jdka/jd/*.py` 三个 + `jdka/core/*.py` 三个）。
+本项目自有的部分（`browser/`、`engine.py`、`license.py`、`server.py`、`service.py`、
+桌面外壳）上游没有，不参与对账。
+
+### 什么时候跑
+
+- 上游改了京准通接口契约、状态语义、轮换策略之后；
+- 发新版本之前，顺手对一次账。
+
+### 适配规则失效时
+
+如果上游把某段被适配的代码整体改写了，脚本会提示「适配规则已失效」。
+这不是误报——说明那处上游变了，需要人工确认后更新 `ADAPTATIONS` 里的规则，
+否则该文件会一直报差异。
