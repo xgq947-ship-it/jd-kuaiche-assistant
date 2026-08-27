@@ -18,6 +18,8 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager};
 
+// 必须与 jdka/update.py 的 RELEASE_REPO 一致：下载只允许来自这个仓库的
+// releases/download 路径，改发布源时两处要一起改。
 const REPO: &str = "xgq947-ship-it/jd-kuaiche-assistant";
 const RELEASE_HOST: &str = "github.com";
 const MAX_UPDATE_BYTES: u64 = 512 * 1024 * 1024;

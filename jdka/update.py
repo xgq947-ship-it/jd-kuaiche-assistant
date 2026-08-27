@@ -19,10 +19,17 @@ from typing import Any
 
 from jdka.version import __version__
 
-REPO = "xgq947-ship-it/jd-kuaiche-assistant"
-LATEST_API = f"https://api.github.com/repos/{REPO}/releases/latest"
-RELEASES_API = f"https://api.github.com/repos/{REPO}/releases"
-RELEASES_PAGE = f"https://github.com/{REPO}/releases/latest"
+SOURCE_REPO = "xgq947-ship-it/jd-kuaiche-assistant"
+
+# 发布源必须是**公开**仓库：买家的客户端不带任何凭据，
+# 私有仓库的 GitHub API 对匿名请求一律返回 404，更新检查会永远拿不到数据。
+# 源码可以继续私有 —— 把安装包发布到一个只放产物、不放源码的公开仓库即可。
+RELEASE_REPO = SOURCE_REPO
+
+REPO = RELEASE_REPO  # 兼容旧引用
+LATEST_API = f"https://api.github.com/repos/{RELEASE_REPO}/releases/latest"
+RELEASES_API = f"https://api.github.com/repos/{RELEASE_REPO}/releases"
+RELEASES_PAGE = f"https://github.com/{RELEASE_REPO}/releases/latest"
 TIMEOUT = 8
 
 _SEMVER = re.compile(r"(\d+)\.(\d+)\.(\d+)")
@@ -76,7 +83,12 @@ def check(current: str = __version__) -> UpdateInfo:
             payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
-            return UpdateInfo(current=current, error="尚未发布任何版本")
+            # 私有仓库对匿名请求同样返回 404，和「真的没发过版本」无法区分。
+            # 不要只说「尚未发布」——那会让买家以为是正常状态，实际是配置错了。
+            return UpdateInfo(
+                current=current,
+                error=f"读不到发布信息（{RELEASE_REPO} 可能是私有仓库或尚未发布版本）",
+            )
         return UpdateInfo(current=current, error=f"检查更新失败：HTTP {exc.code}")
     except Exception as exc:  # noqa: BLE001 - 更新检查永远不该让应用崩
         return UpdateInfo(current=current, error=f"检查更新失败：{type(exc).__name__}")

@@ -331,3 +331,19 @@ def test_monitor_refuses_to_start_without_license(tmp_path, monkeypatch) -> None
     assert result["ok"] is False
     assert "激活" in result["message"]
     assert service._running is False
+
+
+def test_release_repo_must_be_public_for_updates_to_work() -> None:
+    """发布源写错会让买家永远收不到更新，且症状是「看起来正常」的 404。
+
+    这里只能钉住「Rust 下载白名单与 Python 检查源指向同一个仓库」——
+    仓库是否公开要靠部署时确认，代码断言不了。
+    """
+    from pathlib import Path
+
+    from jdka.update import RELEASE_REPO
+
+    rust = Path(__file__).resolve().parent.parent / "src-tauri/src/updater.rs"
+    assert f'"{RELEASE_REPO}"' in rust.read_text(encoding="utf-8"), (
+        "updater.rs 的下载白名单必须与 update.py 的 RELEASE_REPO 一致"
+    )
