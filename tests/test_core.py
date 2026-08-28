@@ -347,3 +347,17 @@ def test_release_repo_must_be_public_for_updates_to_work() -> None:
     assert f'"{RELEASE_REPO}"' in rust.read_text(encoding="utf-8"), (
         "updater.rs 的下载白名单必须与 update.py 的 RELEASE_REPO 一致"
     )
+
+
+def test_auto_rotate_is_off_by_default(tmp_path, monkeypatch) -> None:
+    """自动轮换会真实花钱，不能在用户「只是打开看一眼」时悄悄开始。"""
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    assert AppConfig().auto_rotate is False
+
+
+def test_auto_rotate_survives_save_and_load(tmp_path, monkeypatch) -> None:
+    """曾经声明了却没接线：存进去读不出来等于开关是假的。"""
+    monkeypatch.setenv("JDKA_HOME", str(tmp_path))
+    cfg = AppConfig(auto_rotate=True)
+    cfg.save()
+    assert AppConfig.load().auto_rotate is True

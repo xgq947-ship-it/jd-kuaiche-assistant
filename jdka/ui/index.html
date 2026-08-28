@@ -137,6 +137,15 @@ textarea{font:inherit;width:100%;min-height:84px;padding:9px;border-radius:8px;
       </select>
       <button id="btnSaveSettings">保存</button>
     </div>
+    <div class="row" style="margin-top:10px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="autoRotate" style="width:auto">
+        打开应用后自动继续轮换
+      </label>
+      <span class="muted" style="font-size:12px">
+        轮换只在应用运行期间进行；关闭应用或关机后会停止，重新打开才继续。
+      </span>
+    </div>
   </div>
 
   <div class="card">
@@ -258,6 +267,7 @@ function render(s, upd){
   if (!dirty && config){
     $("interval").value = config.poll_interval_seconds;
     $("rotateMode").value = config.rotate_mode;
+    $("autoRotate").checked = !!config.auto_rotate;
   }
   const byId = {};
   (s.items||[]).forEach(i => byId[i.sku_id] = i);
@@ -413,11 +423,15 @@ $("btnPreview").onclick = async () => {
     alert(lines.length ? "预览结果（未做任何写操作）：\n\n" + lines.join("\n") : "没有启用的 SKU");
   } finally { b.disabled = false; b.textContent = "预览检查（只读）"; refresh(); }
 };
-["interval","rotateMode"].forEach(id => $(id).oninput = () => dirty = true);
+["interval","rotateMode","autoRotate"].forEach(id => $(id).oninput = () => dirty = true);
 $("btnSaveSettings").onclick = async () => {
   const mode = $("rotateMode").value;
   if (mode === "delete" && !confirm("永久删除模式：出单后旧计划会被不可撤销地删除。\n确定开启吗？")) return;
-  const r = await post("/api/settings", {poll_interval_seconds: +$("interval").value, rotate_mode: mode});
+  const r = await post("/api/settings", {
+    poll_interval_seconds: +$("interval").value,
+    rotate_mode: mode,
+    auto_rotate: $("autoRotate").checked,
+  });
   dirty = false; if (!r.ok) alert(r.message); refresh();
 };
 $("btnAdd").onclick = async () => {

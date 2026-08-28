@@ -84,6 +84,8 @@ class AppConfig:
     skus: list[SkuConfig] = field(default_factory=list)
     poll_interval_seconds: int = 20
     rotate_mode: str = "pause"
+    # 打开应用后是否自动继续轮换。默认关闭：自动轮换会真实花钱，
+    # 不该在用户只是"打开看一眼"时就悄悄开始。
     auto_rotate: bool = False
     headless: bool = True
     check_updates: bool = True

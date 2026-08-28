@@ -240,6 +240,8 @@ class _Handler(BaseHTTPRequestHandler):
             cfg.rotate_mode = mode
         if "headless" in body:
             cfg.headless = bool(body["headless"])
+        if "auto_rotate" in body:
+            cfg.auto_rotate = bool(body["auto_rotate"])
         cfg.save()
         return {"ok": True, "config": asdict(cfg)}
 
@@ -273,6 +275,14 @@ def serve(
         print(f"控制面板：{url}")
     if open_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+
+    # 打开应用后自动继续轮换（用户显式开启过才会生效）。
+    # 放在这里而不是 MonitorService.__init__：`jdka preview` 等只读命令
+    # 也会构造 MonitorService，绝不能因此启动真实轮换。
+    if service.config.auto_rotate:
+        result = service.start()
+        if not result.get("ok"):
+            print(f"自动轮换未启动：{result.get('message')}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
