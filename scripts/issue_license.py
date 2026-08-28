@@ -4,7 +4,7 @@
 用法：
 
     python scripts/issue_license.py <设备码> [--note 客户名] \
-        [--private-key ~/Desktop/jd-kuaiche-签发私钥-请妥善保管.pem]
+        [--private-key ~/Library/Application Support/jd-kuaiche-assistant/jd-kuaiche-signing-key.pem]
 
 买家在应用的激活页复制设备码发来，用本脚本签发后把授权码回给他。
 授权码永久有效，且只在那一台设备上可用。
@@ -22,7 +22,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from jdka.license import issue  # noqa: E402
 
-DEFAULT_KEY = pathlib.Path.home() / "Desktop" / "jd-kuaiche-签发私钥-请妥善保管.pem"
+DEFAULT_KEY = pathlib.Path.home() / "Library" / "Application Support" / "jd-kuaiche-assistant" / "jd-kuaiche-signing-key.pem"
 LEDGER = pathlib.Path.home() / "Desktop" / "jd-kuaiche-授权记录.jsonl"
 
 
